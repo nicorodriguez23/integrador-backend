@@ -2,13 +2,20 @@ const Usuario = require("../models/usuarioModel");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 
+// Registrar nuevo usuario (registro normal o desde admin)
 exports.registrarUsuario = async (req, res) => {
   try {
-    console.log("🟢 Datos que llegan del frontend:", req.body);
+    const {
+      nombre,
+      email,
+      password,
+      rol = "cliente",
+      fechaNacimiento,
+      provincia,
+      observacion,
+    } = req.body;
 
-    const { nombre, email, password, rol, fechaNacimiento, provincia, observacion } = req.body;
-
-    if (!nombre || !email || !password || !fechaNacimiento || !provincia) {
+    if (!nombre || !email || !password || !fechaNacimiento) {
       return res.status(400).json({ mensaje: "Todos los campos obligatorios deben ser completados" });
     }
 
@@ -19,30 +26,28 @@ exports.registrarUsuario = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const fechaNacimientoDate = new Date(fechaNacimiento);
-    if (isNaN(fechaNacimientoDate.getTime())) {
-      return res.status(400).json({ mensaje: "La fecha de nacimiento no es válida" });
-    }
-
     const nuevoUsuario = new Usuario({
       nombre,
       email,
       password: hashedPassword,
-      rol: rol || "cliente",
-      fechaNacimiento: fechaNacimientoDate,
+      rol,
+      fechaNacimiento,
       provincia,
       observacion,
     });
 
     await nuevoUsuario.save();
 
-    res.status(201).json({ mensaje: "Usuario registrado correctamente" });
+    const usuarioSinPassword = nuevoUsuario.toObject();
+    delete usuarioSinPassword.password;
+
+    res.status(201).json(usuarioSinPassword);
   } catch (error) {
-    console.error("❌ Error al registrar usuario:", error.message);
     res.status(500).json({ mensaje: "Error al registrar usuario", error: error.message });
   }
 };
 
+// Login
 exports.loginUsuario = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -69,6 +74,7 @@ exports.loginUsuario = async (req, res) => {
   }
 };
 
+// Obtener perfil del usuario autenticado
 exports.obtenerPerfil = async (req, res) => {
   try {
     const usuario = await Usuario.findById(req.usuario.id).select("-password");
@@ -78,5 +84,53 @@ exports.obtenerPerfil = async (req, res) => {
     res.status(200).json(usuario);
   } catch (error) {
     res.status(500).json({ mensaje: "Error al obtener perfil", error: error.message });
+  }
+};
+
+// 🔒 Obtener todos los usuarios (solo admin)
+exports.obtenerUsuarios = async (req, res) => {
+  try {
+    const usuarios = await Usuario.find().select("-password");
+    res.status(200).json(usuarios);
+  } catch (error) {
+    res.status(500).json({ mensaje: "Error al obtener usuarios", error: error.message });
+  }
+};
+
+// 🔒 Actualizar usuario (solo admin)
+exports.actualizarUsuario = async (req, res) => {
+  try {
+    const { nombre, email, password, fechaNacimiento, rol } = req.body;
+
+    const datosActualizados = {
+      nombre,
+      email,
+      fechaNacimiento,
+      rol,
+    };
+
+    if (password) {
+      datosActualizados.password = await bcrypt.hash(password, 10);
+    }
+
+    const usuarioActualizado = await Usuario.findByIdAndUpdate(
+      req.params.id,
+      datosActualizados,
+      { new: true }
+    ).select("-password");
+
+    res.status(200).json(usuarioActualizado);
+  } catch (error) {
+    res.status(500).json({ mensaje: "Error al actualizar usuario", error: error.message });
+  }
+};
+
+// 🔒 Eliminar usuario (solo admin)
+exports.eliminarUsuario = async (req, res) => {
+  try {
+    await Usuario.findByIdAndDelete(req.params.id);
+    res.status(200).json({ mensaje: "Usuario eliminado correctamente" });
+  } catch (error) {
+    res.status(500).json({ mensaje: "Error al eliminar usuario", error: error.message });
   }
 };
